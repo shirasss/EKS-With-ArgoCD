@@ -2,7 +2,7 @@ image:
   repository: "888990920717.dkr.ecr.il-central-1.amazonaws.com/app-ecr"
   # This tag is automatically updated by the CI pipeline on every push to main.
   # Do not set it to "latest" — immutable tags (git SHA) enable exact rollbacks.
-  tag: "70b561a126ac521d0aaf3a453c1b458d9d51f6ea"
+  tag: "2f45e96968675803fdbce7fbd8fb8a01348b14ad"
   pullPolicy: IfNotPresent
 
 replicaCount: 1
