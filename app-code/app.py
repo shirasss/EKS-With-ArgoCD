@@ -40,7 +40,7 @@ def get_counter():
     value = read_counter()
     GET_COUNTER.inc()
     logger.info(f"GET / - Counter value: {value}")
-    return jsonify({"counter": value, "version": VERSION})
+    return jsonify({"counter value!": value, "version": VERSION})
 
 @app.route("/", methods=["POST"])
 def increment_counter():
