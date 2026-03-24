@@ -3,6 +3,8 @@ name: CI / CD
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'helm/values.yaml'
   pull_request:
     branches: [main]
 
@@ -79,6 +81,8 @@ jobs:
     name: Update Helm image tag
     needs: build-and-push
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # allows pushing commits back to the repo
 
     steps:
       - uses: actions/checkout@v4
