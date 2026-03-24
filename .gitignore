@@ -1,0 +1,12 @@
+# Terraform state — contains sensitive output values (IPs, ARNs, etc.)
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+tfplan
+.terraform/
+.terraform.lock.hcl
+
+# Terraform variable files — may contain secrets passed via -var-file
+*.tfvars
+*.tfvars.json
+variables.tf

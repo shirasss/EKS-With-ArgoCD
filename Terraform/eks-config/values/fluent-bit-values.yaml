@@ -1,0 +1,24 @@
+cloudWatch:
+  enabled: false
+
+cloudWatchLogs:
+  enabled: true
+  region: ${aws_region}
+  logGroupName: ${log_group_name}
+  logStreamPrefix: fluentbit-
+  autoCreateGroup: true
+
+serviceAccount:
+  create: true
+  name: fluent-bit
+
+tolerations:
+  - operator: Exists
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi

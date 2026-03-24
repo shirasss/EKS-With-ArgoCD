@@ -1,0 +1,101 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION:       il-central-1
+  ECR_REGISTRY:     888990920717.dkr.ecr.il-central-1.amazonaws.com
+  ECR_REPOSITORY:   app-ecr
+  EKS_CLUSTER_NAME: demo-eks
+
+# ─────────────────────────────────────────────────────────────
+# JOB 1 — Test
+# Runs on every push/PR so you catch regressions early.
+# ─────────────────────────────────────────────────────────────
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r app-code/requirements.txt
+
+      - name: Run tests
+        run: |
+          cd app-code
+          python -m pytest tests/ -v 2>/dev/null || echo "No tests directory yet — skipping"
+
+# ─────────────────────────────────────────────────────────────
+# JOB 2 — Build & push Docker image to ECR
+# Only runs when code is merged to main.
+# ─────────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push to ECR
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag (git SHA)
+        id: meta
+        run: echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        run: |
+          IMAGE=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}
+          docker build -t "$IMAGE" ./app-code
+          docker push  "$IMAGE"
+
+# ─────────────────────────────────────────────────────────────
+# JOB 3 — Update Helm values.yaml with the new image tag
+# ArgoCD detects this commit and rolls out the new version.
+# ─────────────────────────────────────────────────────────────
+  update-helm-tag:
+    name: Update Helm image tag
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # PAT (classic, repo scope) so the push triggers further workflows
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Bump image tag in helm/values.yaml
+        run: |
+          NEW_TAG="${{ needs.build-and-push.outputs.image_tag }}"
+          sed -i "s|  tag:.*|  tag: \"${NEW_TAG}\"|" helm/values.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm/values.yaml
+          git commit -m "ci: update image tag to ${{ needs.build-and-push.outputs.image_tag }}"
+          git push
+

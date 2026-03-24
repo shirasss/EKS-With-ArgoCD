@@ -1,0 +1,24 @@
+configs:
+  params:
+    # Disable TLS on the ArgoCD server — ingress-nginx handles it
+    server.insecure: "true"
+    # Tell ArgoCD its UI is served under /argocd
+    server.rootpath: "/argocd"
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/rewrite-target: /$2
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    extraRules:
+      - http:
+          paths:
+            - path: /argocd(/|$)(.*)
+              pathType: ImplementationSpecific
+              backend:
+                service:
+                  name: argocd-server
+                  port:
+                    number: 80

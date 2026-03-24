@@ -1,0 +1,33 @@
+image:
+  repository: "888990920717.dkr.ecr.il-central-1.amazonaws.com/app-ecr"
+  # This tag is automatically updated by the CI pipeline on every push to main.
+  # Do not set it to "latest" — immutable tags (git SHA) enable exact rollbacks.
+  tag: "placeholder"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+service:
+  port: 80
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    kubernetes.io/ingress.class: "nginx"
+
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  cpuUtilization: 70

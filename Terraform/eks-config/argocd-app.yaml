@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  namespace: argocd
+  # This finalizer ensures that when this Application is deleted,
+  # ArgoCD also removes all the Kubernetes resources it deployed.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/shirasss/EKS-With-ArgoCD
+    targetRevision: main
+    path: helm
+    helm:
+      valueFiles:
+        - values.yaml
+
+  destination:
+    # "in-cluster" target — same cluster ArgoCD runs in
+    server: https://kubernetes.default.svc
+    namespace: my-app
+
+  syncPolicy:
+    automated:
+      # Delete resources removed from Git
+      prune: true
+      # Revert any manual kubectl changes so Git stays the source of truth
+      selfHeal: true
+    syncOptions:
+      # Create the target namespace automatically
+      - CreateNamespace=true
+      # Use server-side apply to handle large CRDs and avoid field manager conflicts
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
