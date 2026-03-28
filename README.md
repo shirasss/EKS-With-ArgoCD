@@ -89,6 +89,10 @@ GitHub (this repo)
 
 ---
 
+The counter is stored on a persistent volume, surviving pod restarts. The image tag in `helm/values.yaml` is an immutable git-SHA tag updated by CI, enabling exact rollbacks.
+
+---
+
 ## Infrastructure
 
 ### VPC
@@ -158,4 +162,3 @@ After `apply`, ArgoCD automatically deploys the application from this repo.
 - IAM uses **least-privilege** policies scoped to specific CloudWatch log group ARNs
 - Fluent Bit uses **EKS Pod Identity** (no long-lived IAM keys)
 - ECR images use **immutable SHA tags** (no `latest` in production)
-
