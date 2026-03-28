@@ -89,10 +89,6 @@ GitHub (this repo)
 
 ---
 
-The counter is stored on a persistent volume, surviving pod restarts. The image tag in `helm/values.yaml` is an immutable git-SHA tag updated by CI, enabling exact rollbacks.
-
----
-
 ## Infrastructure
 
 ### VPC
