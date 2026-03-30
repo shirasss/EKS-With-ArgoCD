@@ -1,56 +1,28 @@
-# EKS with ArgoCD — GitOps on AWS
+# EKS Platform — GitOps on AWS
 
-A production-style Kubernetes platform on AWS EKS, provisioned entirely with Terraform and managed via GitOps using ArgoCD. Includes a sample Flask application with full observability (Prometheus + CloudWatch) and automated CI/CD.
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                          AWS Cloud (il-central-1)               │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                    VPC  10.0.0.0/16                       │   │
-│  │                                                           │   │
-│  │   Public Subnets (AZ-a / AZ-b)                           │   │
-│  │   ├── Internet Gateway                                    │   │
-│  │   └── NAT Gateway ──► Private Subnets                    │   │
-│  │                                                           │   │
-│  │   Private Subnets (AZ-a / AZ-b)                          │   │
-│  │   └── EKS Cluster (v1.34)                                │   │
-│  │         ├── ingress-nginx (LoadBalancer)                  │   │
-│  │         ├── kube-prometheus-stack (Prometheus + Grafana)  │   │
-│  │         ├── Fluent Bit ──► CloudWatch Logs               │   │
-│  │         ├── ArgoCD                                        │   │
-│  │         └── my-app (Flask counter, HPA)                  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│  ECR ── stores Docker images (lifecycle: keep last 5)           │
-│  CloudWatch ── receives logs from Fluent Bit (7-day retention)  │
-└─────────────────────────────────────────────────────────────────┘
-
-GitHub (this repo)
-  └── push to main
-        ├── GitHub Actions: build → push to ECR → update image tag in values.yaml
-        └── ArgoCD: detects change → syncs Helm chart to cluster
-```
+A production-style Kubernetes platform on AWS EKS, built from scratch with Terraform and operated via GitOps using ArgoCD. Covers the full DevOps lifecycle: infrastructure provisioning, CI/CD, container orchestration, observability, DNS management, and security.
 
 ---
+
+
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Cloud | AWS (EKS, ECR, VPC, CloudWatch, IAM) |
-| Infrastructure as Code | Terraform |
+| Cloud | AWS — EKS, ECR, VPC, CloudWatch, Route53, EBS, IAM |
+| Infrastructure as Code | Terraform (modular) |
 | Container Orchestration | Kubernetes (EKS v1.34) |
-| GitOps / CD | ArgoCD |
+| GitOps / Continuous Delivery | ArgoCD |
+| Continuous Integration | GitHub Actions |
 | App Packaging | Helm |
 | Ingress | NGINX Ingress Controller |
+| DNS Automation | External-DNS → Route53 |
 | Monitoring | kube-prometheus-stack (Prometheus + Grafana) |
-| Logging | Fluent Bit → AWS CloudWatch |
-| IAM Auth | EKS Pod Identity |
+| Pre-built Dashboards | Node Exporter, K8s Cluster, Deployments, Nginx Ingress |
+| Logging | Fluent Bit (DaemonSet) → AWS CloudWatch |
+| IAM Authentication | EKS Pod Identity (no static keys, no IRSA) |
+| Storage | EBS CSI Driver — auto-provisioned PVCs |
 | Application | Python / Flask |
 | Container Registry | Amazon ECR |
 
@@ -60,105 +32,122 @@ GitHub (this repo)
 
 ```
 ├── app-code/
-│   ├── app.py              # Flask counter app with Prometheus metrics
+│   ├── app.py              # Flask counter app with Prometheus /metrics endpoint
 │   ├── Dockerfile          # Non-root, slim Python image
 │   └── requirements.txt
 │
-├── helm/                   # Helm chart — source of truth for ArgoCD
+├── helm/                   # Helm chart — ArgoCD watches this directory
 │   ├── Chart.yaml
-│   ├── values.yaml         # Image tag updated automatically by CI
+│   ├── values.yaml         # Image tag auto-updated by CI on every push
 │   └── templates/
 │       ├── deployment.yaml
 │       ├── service.yaml
-│       ├── ingress.yaml
+│       ├── ingress.yaml    # Routes yourdomain.com/ to the app
 │       └── hpa.yaml        # CPU-based autoscaling (1–5 replicas)
 │
 └── Terraform/
-    ├── main.tf             # Root module — orchestrates Infra + eks-config
-    ├── Infra/              # AWS infrastructure
+    ├── main.tf             # Root module — wires Infra + eks-config together
+    ├── variables.tf        # domain_name, github_token
+    ├── providers.tf        # AWS, Helm, Kubernetes, kubectl providers
+    ├── Infra/              # AWS infrastructure layer
     │   ├── vpc.tf          # VPC, subnets, IGW, NAT, route tables
-    │   ├── eks.tf          # EKS cluster + IAM
-    │   ├── node-group.tf   # Managed node group
-    │   ├── ecr.tf          # ECR repo + lifecycle policy
-    │   └── fluent_bit_cloudwatch.tf  # CloudWatch, Pod Identity, IAM
-    └── eks-config/         # In-cluster tools (installed via Helm)
-        ├── main.tf         # ingress-nginx, Prometheus, Fluent Bit, ArgoCD
+    │   ├── eks.tf          # EKS cluster, IAM, EBS CSI driver addon
+    │   ├── node-group.tf   # Managed node group (t3.medium, private subnets)
+    │   ├── ecr.tf          # ECR repo + lifecycle policy (keep last 5 images)
+    │   ├── external_dns.tf # IAM role + Pod Identity for External-DNS
+    │   └── fluent_bit_cloudwatch.tf  # CloudWatch log group, Pod Identity, IAM
+    └── eks-config/         # In-cluster tooling (all via Helm)
+        ├── main.tf         # ingress-nginx, Prometheus, Fluent Bit, External-DNS, ArgoCD
         ├── argocd-app.yaml # ArgoCD Application CRD
-        └── values/         # Helm values for each tool
+        └── values/
+            ├── prometheus_values.yaml   # Grafana persistence, 4 pre-built dashboards
+            ├── argocd-values.yaml       # Sub-path routing (/argocd)
+            ├── external-dns-values.yaml # Route53 zone filter, sync policy
+            ├── fluent-bit-values.yaml   # CloudWatch log shipping
+            └── ingress_values.yaml      # NGINX controller config
 ```
 
 ---
 
-The counter is stored on a persistent volume, surviving pod restarts. The image tag in `helm/values.yaml` is an immutable git-SHA tag updated by CI, enabling exact rollbacks.
+## CI/CD Pipeline
 
----
+### Continuous Integration (GitHub Actions)
+Every push to `main`:
+1. Builds a Docker image
+2. Pushes to ECR with an **immutable git-SHA tag** (e.g. `a3f9c12...`)
+3. Commits the updated tag to `helm/values.yaml` in this repo
 
-## Infrastructure
-
-### VPC
-- CIDR `10.0.0.0/16` across two AZs (`il-central-1a`, `il-central-1b`)
-- Public subnets for the load balancer; private subnets for the EKS nodes
-- NAT Gateway for outbound traffic from private subnets
-
-### EKS
-- Kubernetes **v1.34**, private endpoint + public access
-- Managed node group in private subnets
-- Standard cluster IAM role + node group IAM role with required policies
-
-### ECR
-- Repository `app-ecr` for Docker images
-- Lifecycle policy keeps only the **last 5 images**
-
----
-
-## GitOps Flow
-
-1. A push to `main` triggers a **GitHub Actions** workflow that builds the Docker image, pushes it to ECR with a git-SHA tag, and commits the updated tag back to `helm/values.yaml`.
-2. **ArgoCD** (running inside the cluster) watches this repo's `helm/` directory.
-3. On detecting the new commit, ArgoCD performs an automated sync:
-   - `prune: true` — removes Kubernetes resources deleted from Git
-   - `selfHeal: true` — reverts any manual `kubectl` changes
+### Continuous Delivery (ArgoCD)
+1. ArgoCD detects the new commit in `helm/`
+2. Renders the Helm chart and applies changes to the cluster
+3. `prune: true` — removes resources deleted from Git
+4. `selfHeal: true` — reverts any manual `kubectl` changes automatically
 
 ---
 
 ## Observability
 
-| Signal | Tool | Destination |
-|---|---|---|
-| Metrics | kube-prometheus-stack | Grafana dashboards in-cluster |
-| App metrics | Prometheus client (Flask `/metrics`) | Scraped by Prometheus |
-| Logs | Fluent Bit (DaemonSet) | AWS CloudWatch Logs (7-day retention) |
+### Metrics — Prometheus + Grafana
+- **kube-prometheus-stack** deployed with persistent storage (EBS, 50 GiB)
+- Grafana accessible at `yourdomain.com/grafana`
+- Pre-loaded dashboards (auto-downloaded at startup):
 
-Fluent Bit authenticates to CloudWatch using **EKS Pod Identity** — no static credentials, no IRSA setup required.
+| Dashboard | What it shows |
+|---|---|
+| Kubernetes Cluster | Node/pod/deployment health |
+| Node Exporter | CPU, memory, disk, network per node |
+| Kubernetes Deployments | Replica status, rollout history |
+| Nginx Ingress | RPS, p99 latency, error rate |
+
+### Logging — Fluent Bit → CloudWatch
+- DaemonSet on every node ships container logs to CloudWatch
+- Kubernetes metadata (pod, namespace, labels) merged into every log record
+- `/healthz` probe noise filtered before shipping
+- Authenticates via **EKS Pod Identity** — zero static credentials
 
 ---
 
-## Deployment
+## DNS — External-DNS + Route53
+- External-DNS watches all Ingress objects in the cluster
+- Automatically creates/updates Route53 A records when Ingresses change
+- Single domain, path-based routing:
+
+```
+yourdomain.com/         → Flask app
+yourdomain.com/grafana  → Grafana
+yourdomain.com/argocd   → ArgoCD
+```
+
+---
+
+## Infrastructure Deployment
 
 ### Prerequisites
 - Terraform ≥ 1.5
-- AWS CLI configured with appropriate permissions
-- `kubectl` and `helm`
+- AWS CLI configured
+- `kubectl`, `helm`
+- Route53 hosted zone for your domain
 
 ### Provision
 
 ```bash
 cd Terraform
 terraform init
-terraform apply -var="github_token=<your_PAT>"
+terraform apply -var="github_token=<PAT>" -var="domain_name=<yourdomain.com>"
 ```
 
-Terraform applies in two stages via module `depends_on`:
-1. `Infra/` — VPC, EKS, ECR, CloudWatch
-2. `eks-config/` — Helm releases (NGINX, Prometheus, Fluent Bit, ArgoCD) + ArgoCD Application
+Terraform applies in dependency order:
+1. **Infra/** — VPC, EKS, ECR, IAM roles, EBS CSI driver, External-DNS IAM
+2. **eks-config/** — NGINX, Prometheus, Fluent Bit, External-DNS, ArgoCD, ArgoCD Application
 
-After `apply`, ArgoCD automatically deploys the application from this repo.
+After `apply`, ArgoCD auto-deploys the Flask app. External-DNS creates the Route53 record within ~30 seconds.
 
----
 
-## Security Highlights
+## Security
 
-- Container runs as a **non-root user** (`uid 10001`)
-- IAM uses **least-privilege** policies scoped to specific CloudWatch log group ARNs
-- Fluent Bit uses **EKS Pod Identity** (no long-lived IAM keys)
-- ECR images use **immutable SHA tags** (no `latest` in production)
+- Containers run as **non-root user** (`uid 10001`)
+- IAM roles use **least-privilege** — scoped to specific resource ARNs
+- All AWS service access uses **EKS Pod Identity** — no long-lived IAM keys anywhere in the cluster
+- ECR images tagged with **immutable git SHAs** — `latest` never used in the cluster
+- Node group in **private subnets** — nodes have no public IP
+- `.gitattributes` enforces **LF line endings** on all files — prevents CRLF issues in Terraform/Helm on Windows
