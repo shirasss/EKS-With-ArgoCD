@@ -12,11 +12,6 @@ resource "aws_cloudwatch_log_group" "eks_logs" {
 
 data "aws_region" "current" {}
 
-# Pod Identity Agent addon
-resource "aws_eks_addon" "pod_identity_agent" {
-  cluster_name = aws_eks_cluster.eks.name
-  addon_name   = "eks-pod-identity-agent"
-}
 
 # IAM Role for Fluent Bit (Pod Identity)
 resource "aws_iam_role" "fluent_bit" {

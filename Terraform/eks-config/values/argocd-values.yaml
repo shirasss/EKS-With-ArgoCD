@@ -11,17 +11,10 @@ server:
   ingress:
     enabled: true
     ingressClassName: nginx
-    hostname: ""
+    hostname: "${hostname}"
+    path: /argocd
+    pathType: Prefix
     annotations:
       nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
       nginx.ingress.kubernetes.io/use-regex: "true"
-    extraRules:
-      - http:
-          paths:
-            - path: /argocd(/|$)(.*)
-              pathType: ImplementationSpecific
-              backend:
-                service:
-                  name: argocd-server
-                  port:
-                    number: 80
+      nginx.ingress.kubernetes.io/rewrite-target: /$2

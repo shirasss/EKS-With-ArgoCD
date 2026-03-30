@@ -8,6 +8,23 @@ resource "helm_release" "ingress_nginx" {
   values = [file("${path.module}/values/ingress_values.yaml")]
 }
 
+resource "helm_release" "external_dns" {
+  name             = "external-dns"
+  repository       = "https://kubernetes-sigs.github.io/external-dns"
+  chart            = "external-dns"
+  namespace        = "external-dns"
+  create_namespace = true
+
+  values = [
+    templatefile("${path.module}/values/external-dns-values.yaml", {
+      aws_region  = var.aws_region
+      domain_name = var.domain_name
+    })
+  ]
+
+  depends_on = [helm_release.ingress_nginx]
+}
+
 resource "helm_release" "kube_prometheus_stack" {
   name       = "kube-prometheus-stack"
   repository = "https://prometheus-community.github.io/helm-charts"
@@ -15,7 +32,11 @@ resource "helm_release" "kube_prometheus_stack" {
   namespace  = "monitoring"
 
   create_namespace = true
-  values = [file("${path.module}/values/prometheus_values.yaml")]
+  values = [
+    templatefile("${path.module}/values/prometheus_values.yaml", {
+      hostname = var.domain_name
+    })
+  ]
 
   depends_on = [helm_release.ingress_nginx]
 }
@@ -47,7 +68,11 @@ resource "helm_release" "argocd" {
   namespace        = "argocd"
   create_namespace = true
 
-  values = [file("${path.module}/values/argocd-values.yaml")]
+  values = [
+    templatefile("${path.module}/values/argocd-values.yaml", {
+      hostname = var.domain_name
+    })
+  ]
 
   depends_on = [helm_release.kube_prometheus_stack]
 }

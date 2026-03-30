@@ -9,6 +9,8 @@ grafana:
   ingress:
     enabled: true
     ingressClassName: nginx
+    hosts:
+      - ${hostname}
     path: /grafana
     pathType: Prefix
 
