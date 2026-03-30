@@ -8,6 +8,33 @@ cloudWatchLogs:
   logStreamPrefix: fluentbit-
   autoCreateGroup: true
 
+# Enrich every log line with Kubernetes metadata (pod, namespace, labels, image).
+# Merge multi-line container stdout into a single log record.
+# Exclude noisy health-check probes from being shipped to CloudWatch.
+input:
+  tail:
+    tag: "kube.*"
+    path: "/var/log/containers/*.log"
+    db: "/var/log/flb_kube.db"
+    parser: "docker"
+    memBufLimit: "5MB"
+    skipLongLines: "On"
+    refreshIntervalSeconds: 10
+
+filter:
+  kubernetes:
+    match: "kube.*"
+    kubeURL: "https://kubernetes.default.svc:443"
+    mergeLog: "On"
+    k8sLoggingParser: "On"
+    k8sLoggingExclude: "On"
+    labels: "On"
+    annotations: "Off"
+  grep:
+    match: "kube.*"
+    # Drop /healthz probe noise — keeps CloudWatch costs low
+    exclude: "log /healthz"
+
 serviceAccount:
   create: true
   name: fluent-bit

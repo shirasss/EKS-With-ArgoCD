@@ -12,6 +12,57 @@ grafana:
     path: /grafana
     pathType: Prefix
 
+  # ── Persist dashboards & datasources across pod restarts ─────────────
+  persistence:
+    enabled: true
+    storageClassName: gp2
+    size: 5Gi
+
+  # ── Tell Grafana where to load dashboard JSON files from ─────────────
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: "kubernetes"
+          orgId: 1
+          folder: "Kubernetes"
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/kubernetes
+
+  # ── Download community dashboards from grafana.com at startup ────────
+  dashboards:
+    kubernetes:
+      # Full Kubernetes cluster overview — nodes, pods, deployments, namespaces
+      kubernetes-cluster:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      # Node Exporter — CPU, memory, disk, network broken down per node
+      node-exporter:
+        gnetId: 1860
+        revision: 37
+        datasource: Prometheus
+      # Deployment rollout status & replica history
+      kubernetes-deployments:
+        gnetId: 8588
+        revision: 1
+        datasource: Prometheus
+      # Nginx Ingress — RPS, p50/p99 latency, error rate from the ingress layer
+      nginx-ingress:
+        gnetId: 9614
+        revision: 1
+        datasource: Prometheus
+
+  # ── Auto-load ConfigMap-based dashboards from every namespace ─────────
+  # Any ConfigMap with label `grafana_dashboard: "1"` gets picked up.
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+
 
 
 
